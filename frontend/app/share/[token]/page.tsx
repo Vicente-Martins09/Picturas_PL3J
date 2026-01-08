@@ -17,6 +17,8 @@ export default function ShareTokenPage() {
 
         sessionStorage.setItem("share_token", token);
         sessionStorage.setItem("share_permission", data.permission);
+        sessionStorage.setItem("share_createdBy", data.createdBy);
+
 
         router.replace(`/dashboard/${data.projectId}`);
       } catch (e: any) {

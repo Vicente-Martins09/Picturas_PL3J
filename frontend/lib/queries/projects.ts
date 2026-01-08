@@ -19,6 +19,7 @@ export const useGetProject = (uid: string, pid: string, token: string) => {
   return useQuery({
     queryKey: ["project", uid, pid, token],
     queryFn: () => fetchProject(uid, pid, token),
+    enabled: !!uid && !!pid && !!token,
   });
 };
 
@@ -44,6 +45,7 @@ export const useGetSocket = (token: string) => {
           token: token,
         },
       }),
+    enabled: !!token,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });
@@ -57,5 +59,6 @@ export const useGetProjectResults = (
   return useQuery({
     queryKey: ["projectResults", uid, pid, token],
     queryFn: () => fetchProjectResults(uid, pid, token),
+    enabled: !!uid && !!pid && !!token,
   });
 };

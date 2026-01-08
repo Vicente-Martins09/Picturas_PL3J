@@ -52,6 +52,7 @@ router.get("/validate/:token", async (req, res) => {
     return res.status(200).jsonp({
       projectId: share.projectId,
       permission: share.permission,
+      createdBy: share.createdBy,
     });
   } catch (e) {
     return res.status(503).jsonp({ error: "Erro a validar link" });

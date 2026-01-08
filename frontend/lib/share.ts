@@ -22,3 +22,8 @@ export async function validateShare(shareToken: string) {
   const res = await api.get(`/share/validate/${shareToken}`);
   return res.data; // deve vir { projectId, permission, ... }
 }
+
+export async function fetchSharedProject(shareToken: string) {
+  const res = await api.get(`/share/project/${shareToken}`);
+  return res.data; // devolve o projeto + share.permission
+}

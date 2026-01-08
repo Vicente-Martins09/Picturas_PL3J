@@ -23,6 +23,42 @@ const httpsAgent = new https.Agent({
 const shareURL = "https://share:12001/";
 const projectsURL = "https://projects:9001/";
 
+
+
+
+/**
+ * Validar link (pode ser usado por anónimo)
+ * GET /share/validate/:token
+ */
+router.get("/validate/:token", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const resp = await axios.get(shareURL + `validate/${token}`, { httpsAgent });
+    res.status(resp.status).jsonp(resp.data);
+  } catch (e) {
+    const status = e.response?.status || 403;
+    res.status(status).jsonp(e.response?.data || "Invalid or expired link");
+  }
+});
+
+
+router.get("/project/:token", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    const projectResp = await axios.get(`${projectsURL}${createdBy}/${projectId}`, { httpsAgent });
+
+    res.status(200).json({ ...projectResp.data, share: { permission } });
+  } catch (e) {
+    res.status(400).json("Invalid or expired link");
+  }
+});
+
+
 /**
  * Criar partilha (apenas utilizadores autenticados)
  * POST /share/:user
@@ -62,22 +98,22 @@ router.post("/:user", checkToken, async (req, res) => {
   }
 });
 
-
 /**
- * Validar link (pode ser usado por anónimo)
- * GET /share/validate/:token
+ * Listar links ativos de um projeto (RF54)
+ * GET /share/:user/project/:projectId
  */
-router.get("/validate/:token", async (req, res) => {
+router.get("/:user/project/:projectId", checkToken, async (req, res) => {
   try {
-    const token = req.params.token;
+    const { user, projectId } = req.params;
 
-    const resp = await axios.get(shareURL + `validate/${token}`, { httpsAgent });
+    const resp = await axios.get(shareURL + `${user}/project/${projectId}`, { httpsAgent });
     res.status(resp.status).jsonp(resp.data);
   } catch (e) {
-    const status = e.response?.status || 403;
-    res.status(status).jsonp(e.response?.data || "Invalid or expired link");
+    const status = e.response?.status || 503;
+    res.status(status).jsonp(e.response?.data || "Error listing share links");
   }
 });
+
 
 /**
  * Revogar partilha (apenas dono autenticado)
@@ -95,20 +131,8 @@ router.delete("/:user/:shareId", checkToken, async (req, res) => {
   }
 });
 
-/**
- * Listar links ativos de um projeto (RF54)
- * GET /share/:user/project/:projectId
- */
-router.get("/:user/project/:projectId", checkToken, async (req, res) => {
-  try {
-    const { user, projectId } = req.params;
 
-    const resp = await axios.get(shareURL + `${user}/project/${projectId}`, { httpsAgent });
-    res.status(resp.status).jsonp(resp.data);
-  } catch (e) {
-    const status = e.response?.status || 503;
-    res.status(status).jsonp(e.response?.data || "Error listing share links");
-  }
-});
+
+
 
 module.exports = router;

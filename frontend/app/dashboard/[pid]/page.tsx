@@ -32,21 +32,37 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ModeToggle } from "@/components/project-page/mode-toggle";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useGetSharedProject } from "@/lib/queries/share";
+
 
 export default function Project({
   params,
 }: {
   params: Promise<{ pid: string }>;
 }) {
+
+  const [shareToken, setShareToken] = useState("");
+
+  useEffect(() => {
+    setShareToken(sessionStorage.getItem("share_token") || "");
+  }, []);
+
+
+  const isShare = !!shareToken;
+
   const resolvedParams = use(params);
   const session = useSession();
   const { pid } = resolvedParams;
-  const project = useGetProject(session.user._id, pid, session.token);
+  const sharedProject = useGetSharedProject(shareToken);
+  const uid = isShare ? "" : (session?.user?._id ?? "");
+  const jwt = isShare ? "" : (session?.token ?? "");
+  const authedProject = useGetProject(uid, pid, jwt);
+  const project = shareToken ? sharedProject : authedProject;
   const downloadProjectImages = useDownloadProject();
   const processProject = useProcessProject();
   const downloadProjectResults = useDownloadProjectResults();
   const { toast } = useToast();
-  const socket = useGetSocket(session.token);
+  const socket = useGetSocket(shareToken ? "" : session.token);
   const searchParams = useSearchParams();
   const view = searchParams.get("view") ?? "grid";
   const mode = searchParams.get("mode") ?? "edit";
@@ -63,9 +79,9 @@ export default function Project({
   const totalProcessingSteps =
     (project.data?.tools.length ?? 0) * (project.data?.imgs.length ?? 0);
   const projectResults = useGetProjectResults(
-    session.user._id,
+    shareToken ? "" : uid,
     pid,
-    session.token,
+    shareToken ? "" : jwt,
   );
   const qc = useQueryClient();
 
@@ -141,11 +157,15 @@ export default function Project({
       </div>
     );
 
+  if (project.isLoading || !project.data)
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <Loading />
+      </div>
+    );
+
   if (
-    project.isLoading ||
-    !project.data ||
-    projectResults.isLoading ||
-    !projectResults.data
+    !isShare && ( projectResults.isLoading ||!projectResults.data)
   )
     return (
       <div className="flex justify-center items-center h-screen">
@@ -174,7 +194,7 @@ export default function Project({
           <div className="flex items-center justify-between w-full xl:w-auto gap-2">
             <SidebarTrigger variant="outline" className="h-9 w-10 lg:hidden" />
             <div className="flex items-center gap-2 flex-wrap justify-end xl:justify-normal w-full xl:w-auto">
-              {mode !== "results" && (
+              {!isShare && (
                 <>
                   <Button
                     disabled={
@@ -209,6 +229,7 @@ export default function Project({
                   <AddImagesDialog />
                 </>
               )}
+              {!isShare && (
               <Button
                 variant="outline"
                 className="px-3"
@@ -242,7 +263,7 @@ export default function Project({
                 ) : (
                   <Download />
                 )}
-              </Button>
+              </Button>)}
               <div className="hidden xl:flex items-center gap-2">
                 <ViewToggle />
                 <ModeToggle />
@@ -255,7 +276,7 @@ export default function Project({
           {mode !== "results" && <Toolbar />}
           <ProjectImageList
             setCurrentImageId={setCurrentImage}
-            results={projectResults.data}
+            results={isShare ? { imgs: [], texts: [] } : (projectResults.data ?? { imgs: [], texts: [] })}
           />
         </div>
       </div>
