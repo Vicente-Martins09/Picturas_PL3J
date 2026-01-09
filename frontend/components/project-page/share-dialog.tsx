@@ -34,8 +34,19 @@ export function ShareDialog() {
   const { toast } = useToast();
   const { _id: pid } = useProjectInfo();
   const session = useSession();
+  const canShare = !!session?.user && !!session?.token && session.user.type !== "anonymous";
+
 
   async function handleCreate() {
+    if (!canShare) {
+    toast({
+      title: "Authentication required",
+      description: "Only logged users can share projects.",
+      variant: "destructive",
+    });
+    return;
+  }
+
   try {
     setLoading(true);
     setShareUrl("");
@@ -78,12 +89,17 @@ export function ShareDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
+      {canShare ? (
       <DialogTrigger asChild>
-        <Button className="inline-flex" variant="outline">
+        <Button className="inline-flex" variant="outline" disabled={!canShare} >
           <Share2 /> Share
         </Button>
       </DialogTrigger>
-
+)        : (
+        <Button className="inline-flex" variant="outline" disabled>
+          <Share2 /> Share
+        </Button>
+      )}
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>Share project</DialogTitle>
