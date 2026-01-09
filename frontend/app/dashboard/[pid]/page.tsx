@@ -217,27 +217,38 @@ export default function Project({
                       isReadOnly || project.data.tools.length <= 0 || waitingForPreview !== ""
                     }
                     className="inline-flex"
-                    onClick={() => {
+                    onClick={async () => {
                       if (isReadOnly) return;
-                      processProject.mutate(
-                        {
-                          uid: session.user._id,
-                          pid: project.data._id,
-                          token: session.token,
-                        },
-                        {
-                          onSuccess: () => {
-                            setProcessing(true);
-                            sidebar.setOpen(false);
-                          },
-                          onError: (error) =>
-                            toast({
-                              title: "Ups! An error occurred.",
-                              description: error.message,
-                              variant: "destructive",
-                            }),
-                        },
-                      );
+
+                      try {
+                        if (isShare) {
+                          await api.post(`/share/project/${shareToken}/process`);
+                          setProcessing(true);
+                          sidebar.setOpen(false);
+                        } else {
+                          processProject.mutate(
+                            { uid: session.user._id, pid: project.data._id, token: session.token },
+                            {
+                              onSuccess: () => {
+                                setProcessing(true);
+                                sidebar.setOpen(false);
+                              },
+                              onError: (error) =>
+                                toast({
+                                  title: "Ups! An error occurred.",
+                                  description: error.message,
+                                  variant: "destructive",
+                                }),
+                            },
+                          );
+                        }
+                      } catch (e: any) {
+                        toast({
+                          title: "Ups! An error occurred.",
+                          description: e?.message ?? "Erro ao processar",
+                          variant: "destructive",
+                        });
+                      }
                     }}
                   >
                     <Play /> Apply

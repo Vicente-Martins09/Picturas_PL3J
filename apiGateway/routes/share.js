@@ -58,6 +58,75 @@ router.get("/project/:token", async (req, res) => {
   }
 });
 
+router.post("/project/:token/reorder", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    if (permission !== "EDIT") return res.status(403).jsonp("Share link is READ-only");
+
+    const resp = await axios.post(
+      `${projectsURL}${createdBy}/${projectId}/reorder`,
+      req.body, // newTools
+      { httpsAgent }
+    );
+
+    return res.status(resp.status).jsonp(resp.data);
+  } catch (e) {
+    const status = e.response?.status || 503;
+    return res.status(status).jsonp(e.response?.data || "Error reordering tools");
+  }
+});
+
+router.post("/project/:token/process", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    if (permission !== "EDIT") return res.status(403).jsonp("Share link is READ-only");
+
+    const resp = await axios.post(
+      `${projectsURL}${createdBy}/${projectId}/process`,
+      {}, // body vazio
+      { httpsAgent }
+    );
+
+    return res.status(resp.status).send();
+  } catch (e) {
+    const status = e.response?.status || 503;
+    return res.status(status).jsonp(e.response?.data || "Error processing project");
+  }
+});
+
+
+router.post("/project/:token/cancel", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    if (permission !== "EDIT") return res.status(403).jsonp("Share link is READ-only");
+
+    const resp = await axios.post(
+      `${projectsURL}${createdBy}/${projectId}/cancel`,
+      {},
+      { httpsAgent }
+    );
+
+    return res.status(resp.status).jsonp(resp.data);
+  } catch (e) {
+    const status = e.response?.status || 503;
+    return res.status(status).jsonp(e.response?.data || "Error cancelling");
+  }
+});
+
+
+
 
 /**
  * Criar partilha (apenas utilizadores autenticados)

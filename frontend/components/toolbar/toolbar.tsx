@@ -82,14 +82,20 @@ export function Toolbar({ readOnly = false }: { readOnly?: boolean }) {
 
   // --- O CÉREBRO DO DRAG & DROP ---
   const handleDragEnd = async (event: DragEndEvent) => {
-    if (!uid || !jwt) {
-    toast({
-      variant: "destructive",
-      title: "Sem sessão",
-      description: "Para reordenar precisas de login.",
-    });
-    return;
-  }
+    
+    const shareToken = sessionStorage.getItem("share_token") || "";
+    const isShare = !!shareToken;
+
+    if (!isShare && (!uid || !jwt)) {
+      toast({
+        variant: "destructive",
+        title: "Sem sessão",
+        description: "Para reordenar precisas de login.",
+      });
+      return;
+    }
+    
+    
     const { active, over } = event;
 
     if (active.id !== over?.id && project.tools) {
@@ -107,11 +113,18 @@ export function Toolbar({ readOnly = false }: { readOnly?: boolean }) {
       
       // Enviar para o Backend (Gatilho T-06)
       try {
-        await api.post(
-          `/projects/${uid}/${project._id}/reorder`, 
-          newTools,
-          { headers: { Authorization: `Bearer ${jwt}` } }
-        );
+        const shareToken = sessionStorage.getItem("share_token") || "";
+        const isShare = !!shareToken;
+
+        if (isShare) {
+          await api.post(`/share/project/${shareToken}/reorder`, newTools);
+        } else {
+          await api.post(
+            `/projects/${uid}/${project._id}/reorder`,
+            newTools,
+            { headers: { Authorization: `Bearer ${jwt}` } },
+          );
+        }
         toast({ title: "Pipeline Updated", description: "Processing started..." });
       } catch (error) {
         console.error("Reorder failed", error);
