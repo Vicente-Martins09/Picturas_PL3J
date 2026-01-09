@@ -91,16 +91,56 @@ router.post("/project/:token/process", async (req, res) => {
 
     const resp = await axios.post(
       `${projectsURL}${createdBy}/${projectId}/process`,
-      {}, // body vazio
+      req.body,
       { httpsAgent }
     );
 
-    return res.status(resp.status).send();
+    return res.status(resp.status).jsonp(resp.data);
   } catch (e) {
-    const status = e.response?.status || 503;
-    return res.status(status).jsonp(e.response?.data || "Error processing project");
+    return res.status(400).jsonp(e.response?.data || "Invalid or expired link");
   }
 });
+
+router.get("/project/:token/process/url", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy } = shareResp.data;
+
+    const resp = await axios.get(
+      `${projectsURL}${createdBy}/${projectId}/process/url`,
+      { httpsAgent }
+    );
+
+    return res.status(resp.status).jsonp(resp.data);
+  } catch (e) {
+    return res.status(400).jsonp("Invalid or expired link");
+  }
+});
+
+
+
+router.delete("/project/:token/tool/:toolId", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    if (permission !== "EDIT") return res.status(403).jsonp("Share link is READ-only");
+
+    const resp = await axios.delete(
+      `${projectsURL}${createdBy}/${projectId}/tool/${req.params.toolId}`,
+      { httpsAgent }
+    );
+
+    return res.sendStatus(resp.status);
+  } catch (e) {
+    return res.status(400).jsonp(e.response?.data || "Invalid or expired link");
+  }
+});
+
 
 
 router.post("/project/:token/cancel", async (req, res) => {
@@ -168,6 +208,47 @@ router.put("/project/:token/tool/:toolId", async (req, res) => {
   } catch (e) {
     const status = e.response?.status || 503;
     return res.status(status).jsonp(e.response?.data || "Error updating tool");
+  }
+});
+
+router.post("/project/:token/preview/:img", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    if (permission !== "EDIT") return res.status(403).jsonp("Share link is READ-only");
+
+    const resp = await axios.post(
+      `${projectsURL}${createdBy}/${projectId}/preview/${req.params.img}`,
+      req.body,
+      { httpsAgent }
+    );
+
+    return res.status(resp.status).jsonp(resp.data);
+  } catch (e) {
+    return res.status(400).jsonp(e.response?.data || "Invalid or expired link");
+  }
+});
+
+
+
+router.get("/project/:token/process/url", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy } = shareResp.data;
+
+    const resp = await axios.get(
+      `${projectsURL}${createdBy}/${projectId}/process/url`,
+      { httpsAgent }
+    );
+
+    return res.status(resp.status).jsonp(resp.data);
+  } catch (e) {
+    return res.status(400).jsonp("Invalid or expired link");
   }
 });
 

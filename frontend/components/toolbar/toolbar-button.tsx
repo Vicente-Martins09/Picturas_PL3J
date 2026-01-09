@@ -25,6 +25,13 @@ import { ProjectTool, ProjectToolResponse } from "@/lib/projects";
 import { toast } from "@/hooks/use-toast";
 import { useGetSocket } from "@/lib/queries/projects";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip";
+import {
+  useAddToolShared,
+  useUpdateToolShared,
+  useDeleteToolShared,
+  usePreviewShared,
+  useProcessShared,
+} from "@/lib/mutations/share-project";
 
 interface ToolbarButtonProps {
   open?: boolean;
@@ -87,104 +94,111 @@ export function ToolbarButton({
   const [waiting, setWaiting] = useState<boolean>(false);
   const [timedout, setTimedout] = useState<boolean>(false);
 
+  const shareToken =
+    typeof window !== "undefined"
+      ? sessionStorage.getItem("share_token") || ""
+      : "";
+
+  const sharePermission =
+    typeof window !== "undefined"
+      ? (sessionStorage.getItem("share_permission") || "")
+      : "";
+
+  const isShare = !!shareToken;
+  const isShareEdit = isShare && sharePermission === "EDIT";
+
+  const addToolSharedMut = useAddToolShared();
+  const updateToolSharedMut = useUpdateToolShared();
+  const deleteToolSharedMut = useDeleteToolShared();
+  const previewSharedMut = usePreviewShared();
+  const processSharedMut = useProcessShared();
+
+
+
   function handleDeleteTool() {
-    if (prevTool) {
-      deleteTool.mutate(
-        {
-          uid: session.user._id,
-          pid: project._id,
-          toolId: prevTool._id,
-          token: session.token,
-        },
-        {
-          onError: (error) => {
-            toast({
-              title: "Ups! An error occurred.",
-              description: error.message,
-              variant: "destructive",
-            });
-          },
-        },
-      );
+    if (!prevTool) return;
+
+    if (isShare) {
+      if (!isShareEdit) return; // READ não pode apagar
+
+      deleteToolSharedMut.mutate({
+        shareToken,
+        toolId: prevTool._id,
+      });
+    } else {
+      deleteTool.mutate({
+        uid: session.user._id,
+        pid: project._id,
+        toolId: prevTool._id,
+        token: session.token,
+      });
     }
   }
 
+
   function handlePreview() {
-    previewEdits.mutate(
-      {
+    if (isShare) {
+      previewSharedMut.mutate({
+        shareToken,
+        imageId: currentImage?._id ?? "",
+      });
+    } else {
+      previewEdits.mutate({
         uid: session.user._id,
         pid: project._id,
         imageId: currentImage?._id ?? "",
         token: session.token,
-      },
-      {
-        onSuccess: () => {
-          setWaiting(true);
-          preview.setWaiting(tool.procedure);
-          setTimeout(
-            () => setTimedout(true),
-            10000 * (project.tools.length + 1),
-          );
-        },
-        onError: (error) => {
-          toast({
-            title: "Ups! An error occurred.",
-            description: error.message,
-            variant: "destructive",
-          });
-        },
-      },
-    );
+      });
+    }
   }
 
+
   function handleAddTool(preview?: boolean) {
-    if (prevTool) {
-      updateTool.mutate(
-        {
-          uid: session.user._id,
-          pid: project._id,
+    if (isShare) {
+      if (!isShareEdit) return; // READ não pode editar
+
+      if (prevTool) {
+        updateToolSharedMut.mutate({
+          shareToken,
           toolId: prevTool._id,
           params: tool.params,
-          token: session.token,
-        },
-        {
-          onSuccess: () => {
-            if (preview) handlePreview();
-          },
-          onError: (error) => {
-            toast({
-              title: "Ups! An error occurred.",
-              description: error.message,
-              variant: "destructive",
-            });
-          },
-        },
-      );
-    } else {
-      addTool.mutate(
-        {
-          uid: session.user._id,
-          pid: project._id,
+        });
+      } else {
+        addToolSharedMut.mutate({
+          shareToken,
           procedure: tool.procedure,
           params: tool.params,
-          token: session.token,
-        },
-        {
-          onSuccess: () => {
-            if (preview) handlePreview();
-          },
-          onError: (error) => {
-            toast({
-              title: "Ups! An error occurred.",
-              description: error.message,
-              variant: "destructive",
-            });
-          },
-        },
-      );
+        });
+      }
+
+      if (preview) handlePreview();
+      setOpen(false);
+      return;
     }
+
+    // --- comportamento normal (dono do projeto) ---
+    if (prevTool) {
+      updateTool.mutate({
+        uid: session.user._id,
+        pid: project._id,
+        toolId: prevTool._id,
+        params: tool.params,
+        token: session.token,
+      });
+    } else {
+      addTool.mutate({
+        uid: session.user._id,
+        pid: project._id,
+        procedure: tool.procedure,
+        params: tool.params,
+        token: session.token,
+      });
+    }
+
+    if (preview) handlePreview();
     setOpen(false);
   }
+
 
   function handleClick() {
     if (isPremium) {
@@ -326,7 +340,7 @@ export function ToolbarButton({
               handleDeleteTool();
               onDefault();
             }}
-            disabled={isDefault}
+            disabled={isDefault || (isShare && !isShareEdit)}
           >
             Default
           </Button>
@@ -340,7 +354,7 @@ export function ToolbarButton({
           </Button>
           <Button
             onClick={() => handleAddTool()}
-            disabled={isDefault}
+            disabled={isDefault || (isShare && !isShareEdit)}
             className="h-6 text-xs w-full"
           >
             Save
