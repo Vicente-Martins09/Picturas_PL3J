@@ -56,7 +56,7 @@ import { Eraser, Layers } from "lucide-react";
 import { SortableTool } from "./sortable-tool"; // O ficheiro que criaste no Passo 1
 import { useToast } from "@/hooks/use-toast";
 
-export function Toolbar() {
+export function Toolbar({ readOnly = false }: { readOnly?: boolean }) {
   const searchParams = useSearchParams();
   const view = searchParams.get("view") ?? "grid";
   const disabled = view === "grid";
@@ -66,11 +66,12 @@ export function Toolbar() {
   const { toast } = useToast();
   const [open, setOpen] = useState<boolean>(false);
 
-  const clearTools = useClearProjectTools(
-    session.user._id,
-    project._id,
-    session.token,
-  );
+  const uid = session?.user?._id ?? "";
+  const jwt = session?.token ?? "";
+
+
+  const clearTools = useClearProjectTools(uid, project._id, jwt);
+
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -81,6 +82,14 @@ export function Toolbar() {
 
   // --- O CÉREBRO DO DRAG & DROP ---
   const handleDragEnd = async (event: DragEndEvent) => {
+    if (!uid || !jwt) {
+    toast({
+      variant: "destructive",
+      title: "Sem sessão",
+      description: "Para reordenar precisas de login.",
+    });
+    return;
+  }
     const { active, over } = event;
 
     if (active.id !== over?.id && project.tools) {
@@ -99,9 +108,9 @@ export function Toolbar() {
       // Enviar para o Backend (Gatilho T-06)
       try {
         await api.post(
-          `/projects/${session.user._id}/${project._id}/reorder`, 
+          `/projects/${uid}/${project._id}/reorder`, 
           newTools,
-          { headers: { Authorization: `Bearer ${session.token}` } }
+          { headers: { Authorization: `Bearer ${jwt}` } }
         );
         toast({ title: "Pipeline Updated", description: "Processing started..." });
       } catch (error) {
@@ -126,7 +135,7 @@ export function Toolbar() {
           <DndContext 
             sensors={sensors} 
             collisionDetection={closestCenter} 
-            onDragEnd={handleDragEnd}
+            onDragEnd={readOnly ? undefined : handleDragEnd}
           >
             <SortableContext 
               items={project.tools.map((t) => t._id)} 
@@ -168,7 +177,7 @@ export function Toolbar() {
                 variant="ghost"
                 size="sm"
                 className="text-red-400 hover:text-red-500 h-6 px-2 text-xs"
-                disabled={project.tools.length === 0}
+                disabled={readOnly || project.tools.length === 0}
               >
                 <Eraser className="w-3 h-3 mr-1" /> Limpar
               </Button>
@@ -182,11 +191,17 @@ export function Toolbar() {
                 <Button
                   variant="destructive"
                   onClick={() => {
+
+                    if (!uid || !jwt) {
+                      toast({ variant: "destructive", title: "Sem sessão", description: "Não podes editar sem login." });
+                      return;
+                    }   
+
                     clearTools.mutate({
-                      uid: session.user._id,
+                      uid: uid,
                       pid: project._id,
                       toolIds: project.tools.map((t) => t._id),
-                      token: session.token,
+                      token: jwt,
                     });
                     setOpen(false);
                   }}
@@ -200,21 +215,21 @@ export function Toolbar() {
 
         <div className="grid grid-cols-4 gap-2">
           {/* Botões originais */}
-          <BrightnessTool disabled={disabled} />
-          <ContrastTool disabled={disabled} />
-          <SaturationTool disabled={disabled} />
-          <BinarizationTool disabled={disabled} />
-          <RotateTool disabled={disabled} />
-          <CropTool disabled={disabled} />
-          <ResizeTool disabled={disabled} />
-          <BorderTool disabled={disabled} />
-          <WatermarkTool disabled={disabled} />
-          <BgRemovalAITool disabled={disabled} />
-          <CropAITool disabled={disabled} />
-          <ObjectAITool disabled={disabled} />
-          <PeopleAITool disabled={disabled} />
-          <TextAITool disabled={disabled} />
-          <UpgradeAITool disabled={disabled} />
+          <BrightnessTool disabled={disabled || readOnly} />
+          <ContrastTool disabled={disabled || readOnly} />
+          <SaturationTool disabled={disabled || readOnly} />
+          <BinarizationTool disabled={disabled || readOnly} />
+          <RotateTool disabled={disabled || readOnly} />
+          <CropTool disabled={disabled || readOnly} />
+          <ResizeTool disabled={disabled || readOnly} />
+          <BorderTool disabled={disabled || readOnly} />
+          <WatermarkTool disabled={disabled || readOnly} />
+          <BgRemovalAITool disabled={disabled || readOnly} />
+          <CropAITool disabled={disabled || readOnly} />
+          <ObjectAITool disabled={disabled || readOnly} />
+          <PeopleAITool disabled={disabled || readOnly} />
+          <TextAITool disabled={disabled || readOnly} />
+          <UpgradeAITool disabled={disabled || readOnly} />
         </div>
       </div>
     </div>

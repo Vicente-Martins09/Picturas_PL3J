@@ -51,6 +51,8 @@ export default function Project({
 
   const isShare = !!shareToken;
 
+  
+
   const resolvedParams = use(params);
   const session = useSession();
   const { pid } = resolvedParams;
@@ -63,7 +65,7 @@ export default function Project({
   const processProject = useProcessProject();
   const downloadProjectResults = useDownloadProjectResults();
   const { toast } = useToast();
-  const socket = useGetSocket(shareToken ? "" : session.token);
+  const socket = useGetSocket(shareToken ? "" : jwt);
   const searchParams = useSearchParams();
   const view = searchParams.get("view") ?? "grid";
   const mode = searchParams.get("mode") ?? "edit";
@@ -77,6 +79,12 @@ export default function Project({
   const [processingSteps, setProcessingSteps] = useState<number>(1);
   const [waitingForPreview, setWaitingForPreview] = useState<string>("");
   const [cancelRequested, setCancelRequested] = useState<boolean>(false);
+
+  const sharePermission =
+    (project.data as any)?.share?.permission ??
+    (sessionStorage.getItem("share_permission") || "READ");
+
+  const isReadOnly = isShare && sharePermission !== "EDIT";
 
   const totalProcessingSteps =
     (project.data?.tools.length ?? 0) * (project.data?.imgs.length ?? 0);
@@ -202,14 +210,15 @@ export default function Project({
           <div className="flex items-center justify-between w-full xl:w-auto gap-2">
             <SidebarTrigger variant="outline" className="h-9 w-10 lg:hidden" />
             <div className="flex items-center gap-2 flex-wrap justify-end xl:justify-normal w-full xl:w-auto">
-              {!isShare && (
+              
                 <>
                   <Button
                     disabled={
-                      project.data.tools.length <= 0 || waitingForPreview !== ""
+                      isReadOnly || project.data.tools.length <= 0 || waitingForPreview !== ""
                     }
                     className="inline-flex"
                     onClick={() => {
+                      if (isReadOnly) return;
                       processProject.mutate(
                         {
                           uid: session.user._id,
@@ -233,11 +242,11 @@ export default function Project({
                   >
                     <Play /> Apply
                   </Button>
-                  <ShareDialog />
-                  <AddImagesDialog />
+                  {!isShare && <ShareDialog />}
+                  {!isShare && <AddImagesDialog />}
                 </>
-              )}
-              {!isShare && (
+              
+              
               <Button
                 variant="outline"
                 className="px-3"
@@ -271,7 +280,7 @@ export default function Project({
                 ) : (
                   <Download />
                 )}
-              </Button>)}
+              </Button>
               <div className="hidden xl:flex items-center gap-2">
                 <ViewToggle />
                 <ModeToggle />
@@ -281,7 +290,7 @@ export default function Project({
         </div>
         {/* Main Content */}
         <div className="h-full overflow-x-hidden flex">
-          {mode !== "results" && <Toolbar />}
+          {mode !== "results" && <Toolbar readOnly={isReadOnly}/>}
           <ProjectImageList
             setCurrentImageId={setCurrentImage}
             results={isShare ? { imgs: [], texts: [] } : (projectResults.data ?? { imgs: [], texts: [] })}
@@ -304,6 +313,7 @@ export default function Project({
               <LoaderCircle className="size-[1em] animate-spin" />
             </div>
             <Progress value={processingProgress} className="w-96" />
+            {!isShare && (
             <Button 
               variant="destructive" 
               onClick={async () => {
@@ -331,7 +341,7 @@ export default function Project({
               }}
             >
               Cancel
-            </Button>
+            </Button>)}
           </Card>
         </div>
       </Transition>
