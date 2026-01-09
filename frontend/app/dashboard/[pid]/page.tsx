@@ -35,6 +35,12 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useGetSharedProject } from "@/lib/queries/share";
 import { api } from "@/lib/axios";
 
+import JSZip from "jszip";
+import axios from "axios";
+import { useGetSharedResults } from "@/lib/queries/share-results";
+
+
+
 
 export default function Project({
   params,
@@ -79,6 +85,8 @@ export default function Project({
   const [processingSteps, setProcessingSteps] = useState<number>(1);
   const [waitingForPreview, setWaitingForPreview] = useState<string>("");
   const [cancelRequested, setCancelRequested] = useState<boolean>(false);
+  const sharedResults = useGetSharedResults(shareToken);
+
 
   const sharePermission =
     (project.data as any)?.share?.permission ??
@@ -262,25 +270,65 @@ export default function Project({
                 variant="outline"
                 className="px-3"
                 title="Download project"
-                onClick={() => {
-                  (mode === "edit"
-                    ? downloadProjectImages
-                    : downloadProjectResults
-                  ).mutate(
-                    {
+                onClick={async () => {
+                  try {
+                    // ---------------- SHARE ----------------
+                    if (isShare) {
+                      if (!project.data) throw new Error("Shared project not loaded");
+
+                      const zip = new JSZip();
+
+                      if (mode === "edit") {
+                        // download imagens do projeto
+                        for (const image of project.data.imgs) {
+                          const resp = await axios.get(image.url, { responseType: "arraybuffer" });
+                          zip.file(image.name, resp.data);
+                        }
+
+                        const blob = await zip.generateAsync({ type: "blob" });
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `${project.data.name}.zip`;
+                        a.click();
+                        return;
+                      }
+
+                      // mode === "results"
+                      const results = sharedResults.data; // <- a tua query share results
+                      if (!results) throw new Error("No results yet");
+
+                      const all = [
+                        ...(results.imgs ?? []).map((x: any) => ({ name: x.name, url: x.url })),
+                        ...(results.texts ?? []).map((x: any) => ({ name: x.name, url: x.url })),
+                      ];
+
+                      for (const r of all) {
+                        const resp = await axios.get(r.url, { responseType: "arraybuffer" });
+                        zip.file(r.name, resp.data);
+                      }
+
+                      const blob = await zip.generateAsync({ type: "blob" });
+                      const a = document.createElement("a");
+                      a.href = URL.createObjectURL(blob);
+                      a.download = `${project.data.name}_results.zip`;
+                      a.click();
+                      return;
+                    }
+
+                    // ---------------- NORMAL ----------------
+                    (mode === "edit" ? downloadProjectImages : downloadProjectResults).mutate({
                       uid: session.user._id,
                       pid: project.data._id,
                       token: session.token,
                       projectName: project.data.name,
-                    },
-                    {
-                      onSuccess: () => {
-                        toast({
-                          title: `Project ${project.data.name} downloaded.`,
-                        });
-                      },
-                    },
-                  );
+                    });
+                  } catch (e: any) {
+                    toast({
+                      title: "Ups! An error occurred.",
+                      description: e?.message ?? "Erro ao fazer download",
+                      variant: "destructive",
+                    });
+                  }
                 }}
               >
                 {(mode === "edit"
@@ -304,7 +352,7 @@ export default function Project({
           {mode !== "results" && <Toolbar readOnly={isReadOnly}/>}
           <ProjectImageList
             setCurrentImageId={setCurrentImage}
-            results={isShare ? { imgs: [], texts: [] } : (projectResults.data ?? { imgs: [], texts: [] })}
+            results={isShare ? (sharedResults.data ?? { imgs: [], texts: [] }) : (projectResults.data ?? { imgs: [], texts: [] })}
           />
         </div>
       </div>

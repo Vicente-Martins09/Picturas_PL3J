@@ -27,3 +27,8 @@ export async function fetchSharedProject(shareToken: string) {
   const res = await api.get(`/share/project/${shareToken}`);
   return res.data; // devolve o projeto + share.permission
 }
+
+export async function clearSharedTools(shareToken: string) {
+  const res = await api.delete(`/share/project/${shareToken}/tools`);
+  return res.data;
+}

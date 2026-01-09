@@ -103,7 +103,7 @@ router.post("/project/:token/process", async (req, res) => {
 
 router.get("/project/:token/process/url", async (req, res) => {
   try {
-    const token = req.params.token;
+    const { token } = req.params;
 
     const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
     const { projectId, createdBy } = shareResp.data;
@@ -113,12 +113,11 @@ router.get("/project/:token/process/url", async (req, res) => {
       { httpsAgent }
     );
 
-    return res.status(resp.status).jsonp(resp.data);
-  } catch (e) {
-    return res.status(400).jsonp("Invalid or expired link");
+    res.status(200).send(resp.data);
+  } catch (err) {
+    res.status(500).jsonp("Error getting processing results");
   }
 });
-
 
 
 router.delete("/project/:token/tool/:toolId", async (req, res) => {
@@ -187,6 +186,57 @@ router.post("/project/:token/tool", async (req, res) => {
   }
 });
 
+router.delete("/project/:token/tools", async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    if (permission !== "EDIT") {
+      return res.status(403).jsonp("Share link does not allow editing");
+    }
+
+    // buscar tools atuais
+    const projectResp = await axios.get(`${projectsURL}${createdBy}/${projectId}`, { httpsAgent });
+    const tools = projectResp.data?.tools ?? [];
+
+    // apagar tools uma a uma (como fazias no frontend)
+    for (const t of tools) {
+      await axios.delete(`${projectsURL}${createdBy}/${projectId}/tool/${t._id}`, { httpsAgent });
+    }
+
+    return res.sendStatus(204);
+  } catch (e) {
+    const status = e.response?.status || 400;
+    return res.status(status).jsonp(e.response?.data || "Error clearing tools");
+  }
+});
+
+router.get("/project/:token/download/results", async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy } = shareResp.data;
+
+    const resp = await axios.get(`${projectsURL}${createdBy}/${projectId}/process`, {
+      httpsAgent,
+      responseType: "stream",
+    });
+
+    // passar headers e stream
+    res.status(resp.status);
+    Object.entries(resp.headers).forEach(([k, v]) => res.setHeader(k, v));
+    resp.data.pipe(res);
+  } catch (e) {
+    const status = e.response?.status || 400;
+    return res.status(status).jsonp(e.response?.data || "Error downloading results");
+  }
+});
+
+
+
 
 router.put("/project/:token/tool/:toolId", async (req, res) => {
   try {
@@ -231,28 +281,6 @@ router.post("/project/:token/preview/:img", async (req, res) => {
     return res.status(400).jsonp(e.response?.data || "Invalid or expired link");
   }
 });
-
-
-
-router.get("/project/:token/process/url", async (req, res) => {
-  try {
-    const token = req.params.token;
-
-    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
-    const { projectId, createdBy } = shareResp.data;
-
-    const resp = await axios.get(
-      `${projectsURL}${createdBy}/${projectId}/process/url`,
-      { httpsAgent }
-    );
-
-    return res.status(resp.status).jsonp(resp.data);
-  } catch (e) {
-    return res.status(400).jsonp("Invalid or expired link");
-  }
-});
-
-
 
 
 /**

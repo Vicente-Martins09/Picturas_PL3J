@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { 
   DndContext, 
   closestCenter, 
@@ -55,6 +55,9 @@ import {
 import { Eraser, Layers } from "lucide-react";
 import { SortableTool } from "./sortable-tool"; // O ficheiro que criaste no Passo 1
 import { useToast } from "@/hooks/use-toast";
+import { useClearSharedTools } from "@/lib/mutations/share";
+import { useRouter } from "next/navigation";
+
 
 export function Toolbar({ readOnly = false }: { readOnly?: boolean }) {
   const searchParams = useSearchParams();
@@ -68,9 +71,17 @@ export function Toolbar({ readOnly = false }: { readOnly?: boolean }) {
 
   const uid = session?.user?._id ?? "";
   const jwt = session?.token ?? "";
+  const router = useRouter(); 
 
 
   const clearTools = useClearProjectTools(uid, project._id, jwt);
+
+  const [shareToken, setShareToken] = useState("");
+  useEffect(() => {
+    setShareToken(sessionStorage.getItem("share_token") || "");
+  }, []);
+
+  const clearShared = useClearSharedTools();
 
 
   const sensors = useSensors(
@@ -205,17 +216,24 @@ export function Toolbar({ readOnly = false }: { readOnly?: boolean }) {
                   variant="destructive"
                   onClick={() => {
 
-                    if (!uid || !jwt) {
-                      toast({ variant: "destructive", title: "Sem sessão", description: "Não podes editar sem login." });
-                      return;
-                    }   
-
-                    clearTools.mutate({
-                      uid: uid,
-                      pid: project._id,
-                      toolIds: project.tools.map((t) => t._id),
-                      token: jwt,
-                    });
+                    if (shareToken) {
+                      // ✅ SHARE: limpar via gateway (sem JWT)
+                      clearShared.mutate(shareToken, {
+                        onSuccess: () => {
+                          toast({ title: "Tools cleared." });
+                          // força refresh à página / queries
+                          router.refresh();
+                        },
+                      });
+                    } else {
+                      // ✅ NORMAL: limpar via projects (com JWT)
+                      clearTools.mutate({
+                        uid: uid,
+                        pid: project._id,
+                        toolIds: project.tools.map((t) => t._id),
+                        token: jwt,
+                      });
+                    }
                     setOpen(false);
                   }}
                 >
