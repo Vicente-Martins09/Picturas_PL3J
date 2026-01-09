@@ -341,55 +341,69 @@ export const previewProjectImage = async ({
 export const addProjectTool = async ({
   uid,
   pid,
-  tool,
   token,
+  procedure,
+  params,
 }: {
   uid: string;
   pid: string;
-  tool: ProjectTool;
   token: string;
+  procedure: string;
+  params: any;
 }) => {
-  const response = await api.post(
+  const shareToken = sessionStorage.getItem("share_token") || "";
+  const isShare = !!shareToken;
+
+  if (isShare) {
+    // EDIT via link
+    const res = await api.post(`/share/project/${shareToken}/tool`, {
+      procedure,
+      params,
+    });
+    return res.data;
+  }
+
+  // modo normal (com JWT)
+  const res = await api.post(
     `/projects/${uid}/${pid}/tool`,
-    {
-      ...tool,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    },
+    { procedure, params },
+    { headers: { Authorization: `Bearer ${token}` } },
   );
 
-  if (response.status !== 201) throw new Error("Failed to add tool");
+  return res.data;
 };
+
 
 export const updateProjectTool = async ({
   uid,
   pid,
   toolId,
-  toolParams,
   token,
+  params,
 }: {
   uid: string;
   pid: string;
   toolId: string;
-  toolParams: ToolParams;
   token: string;
+  params: any;
 }) => {
-  const response = await api.put(
+  const shareToken = sessionStorage.getItem("share_token") || "";
+  const isShare = !!shareToken;
+
+  if (isShare) {
+    const res = await api.put(`/share/project/${shareToken}/tool/${toolId}`, {
+      params,
+    });
+    return res.data;
+  }
+
+  const res = await api.put(
     `/projects/${uid}/${pid}/tool/${toolId}`,
-    {
-      params: toolParams,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    },
+    { params },
+    { headers: { Authorization: `Bearer ${token}` } },
   );
 
-  if (response.status !== 204) throw new Error("Failed to update tool");
+  return res.data;
 };
 
 export const deleteProjectTool = async ({

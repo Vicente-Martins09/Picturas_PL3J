@@ -158,6 +158,14 @@ export const useAddProjectTool = (uid: string, pid: string, token: string) => {
   return useMutation({
     mutationFn: addProjectTool,
     onSuccess: () => {
+      const shareToken = typeof window !== "undefined"
+        ? sessionStorage.getItem("share_token") || ""
+        : "";
+
+      if (shareToken) {
+        qc.invalidateQueries({ refetchType: "all", queryKey: ["shared-project", shareToken] });
+      }
+
       qc.invalidateQueries({
         refetchType: "all",
         queryKey: ["project", uid, pid, token],
@@ -185,6 +193,14 @@ export const useUpdateProjectTool = (
   return useMutation({
     mutationFn: updateProjectTool,
     onSuccess: () => {
+      const shareToken = typeof window !== "undefined"
+        ? sessionStorage.getItem("share_token") || ""
+        : "";
+
+      if (shareToken) {
+        qc.invalidateQueries({ refetchType: "all", queryKey: ["shared-project", shareToken] });
+      }
+
       qc.invalidateQueries({
         refetchType: "all",
         queryKey: ["project", uid, pid, token],

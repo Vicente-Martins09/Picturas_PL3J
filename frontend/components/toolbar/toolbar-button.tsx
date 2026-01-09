@@ -144,7 +144,7 @@ export function ToolbarButton({
           uid: session.user._id,
           pid: project._id,
           toolId: prevTool._id,
-          toolParams: tool.params,
+          params: tool.params,
           token: session.token,
         },
         {
@@ -165,10 +165,8 @@ export function ToolbarButton({
         {
           uid: session.user._id,
           pid: project._id,
-          tool: {
-            ...tool,
-            position: project.tools.length,
-          },
+          procedure: tool.procedure,
+          params: tool.params,
           token: session.token,
         },
         {

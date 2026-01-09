@@ -125,6 +125,52 @@ router.post("/project/:token/cancel", async (req, res) => {
   }
 });
 
+router.post("/project/:token/tool", async (req, res) => {
+  try {
+    const token = req.params.token;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    if (permission !== "EDIT") return res.status(403).jsonp("Share link is READ-only");
+
+    const resp = await axios.post(
+      `${projectsURL}${createdBy}/${projectId}/tool`,
+      req.body, // { procedure, params }
+      { httpsAgent }
+    );
+
+    return res.status(resp.status).jsonp(resp.data);
+  } catch (e) {
+    const status = e.response?.status || 503;
+    return res.status(status).jsonp(e.response?.data || "Error adding tool");
+  }
+});
+
+
+router.put("/project/:token/tool/:toolId", async (req, res) => {
+  try {
+    const token = req.params.token;
+    const toolId = req.params.toolId;
+
+    const shareResp = await axios.get(`${shareURL}validate/${token}`, { httpsAgent });
+    const { projectId, createdBy, permission } = shareResp.data;
+
+    if (permission !== "EDIT") return res.status(403).jsonp("Share link is READ-only");
+
+    const resp = await axios.put(
+      `${projectsURL}${createdBy}/${projectId}/tool/${toolId}`,
+      req.body, // { params }
+      { httpsAgent }
+    );
+
+    return res.sendStatus(resp.status);
+  } catch (e) {
+    const status = e.response?.status || 503;
+    return res.status(status).jsonp(e.response?.data || "Error updating tool");
+  }
+});
+
 
 
 
