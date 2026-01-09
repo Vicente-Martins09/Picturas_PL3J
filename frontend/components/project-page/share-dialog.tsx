@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { LoaderCircle, Share2, Copy } from "lucide-react";
 import { useCreateShare } from "@/lib/mutations/share";
+import { useQueryClient } from "@tanstack/react-query";
 
 
 import { useProjectInfo } from "@/providers/project-provider";
@@ -26,8 +27,9 @@ export function ShareDialog() {
   const [permission, setPermission] = useState<Permission>("READ");
   const [shareUrl, setShareUrl] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const qc = useQueryClient();
   const createShareMutation = useCreateShare();
-
+  
 
   const { toast } = useToast();
   const { _id: pid } = useProjectInfo();
@@ -44,6 +46,8 @@ export function ShareDialog() {
       token: session.token,
       permission,
     });
+
+    qc.invalidateQueries({ queryKey: ["share-links", session.user._id, pid] });
 
     const url = `${window.location.origin}/share/${data.token}`;
     setShareUrl(url);

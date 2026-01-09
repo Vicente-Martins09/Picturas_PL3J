@@ -16,6 +16,8 @@ import { useRouter } from "next/navigation";
 import NewProjectDialog from "./new-project-dialog";
 import ProjectList from "./project-list";
 import { useSession } from "@/providers/session-provider";
+import ShareLinksSection from "./share-list"; 
+
 
 export default function DashboardSidebar() {
   const path = usePathname();
@@ -23,6 +25,9 @@ export default function DashboardSidebar() {
   const session = useSession();
   const isFreePlan = session.user.type === "free";
   const isAnonymous = session.user.type === "anonymous";
+  const isProjectPage =
+    path.startsWith("/dashboard/") && !path.includes("/dashboard/account");
+  const pid = isProjectPage ? path.split("/dashboard/")[1]?.split("/")[0] : "";
 
   if (!path.includes("/dashboard/account"))
     return (
@@ -58,6 +63,9 @@ export default function DashboardSidebar() {
             )}
           </SidebarGroup>
           <ProjectList />
+          {pid && session.user.type !== "anonymous" && (
+            <ShareLinksSection pid={pid} />
+          )}
         </SidebarContent>
         <SidebarFooter>
           {session.user.type !== "anonymous" ? (
