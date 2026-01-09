@@ -703,52 +703,166 @@ router.post("/:user/:project/tool", (req, res, next) => {
     .catch((_) => res.send(401).jsonp(`Error accessing picturas-user-ms`));
 });
 
-// Reorder tools of a project AND TRIGGER UPDATE (T-06)
-router.post("/:user/:project/reorder", async (req, res, next) => {
-  try {
-    const project = await Project.getOne(req.params.user, req.params.project);
-    
-    // 1. Atualizar a ordem na Base de Dados
-    project["tools"] = [];
-    for (let t of req.body) {
-      const tool = {
-        position: project["tools"].length,
-        ...t,
-      };
-      project["tools"].push(tool);
-    }
-    await Project.update(req.params.user, req.params.project, project);
+// Reorder tools of a project
+router.post("/:user/:project/reorder", (req, res, next) => {
+  // Remove all tools from project and reinsert them according to new order
+  Project.getOne(req.params.user, req.params.project)
+    .then((project) => {
+      project["tools"] = [];
 
-    // 2. T-06: Disparar atualização IMEDIATA
-    // Chamamos a função auxiliar que criámos
-    await trigger_processing(req.params.user, req.params.project);
+      for (let t of req.body) {
+        const tool = {
+          position: project["tools"].length,
+          ...t,
+        };
 
-    res.sendStatus(204); // Sucesso
+        project["tools"].push(tool);
+      }
 
-  } catch (err) {
-    console.error("Reorder error:", err);
-    if (err.status) {
-        res.status(err.status).jsonp(err.msg);
-    } else {
-        res.status(503).jsonp(`Error updating project order or triggering process`);
-    }
-  }
+      Project.update(req.params.user, req.params.project, project)
+        .then((project) => res.status(204).jsonp(project))
+        .catch((_) =>
+          res.status(503).jsonp(`Error updating project information`)
+        );
+    })
+    .catch((_) => res.status(501).jsonp(`Error acquiring user's project`));
 });
 
 // Process a specific project
-// Process a specific project
-router.post("/:user/:project/process", async (req, res, next) => {
-  try {
-    await trigger_processing(req.params.user, req.params.project);
-    res.sendStatus(201);
-  } catch (err) {
-    console.error("Process error:", err);
-    if (err.status) {
-        res.status(err.status).jsonp(err.msg);
-    } else {
-        res.status(500).jsonp("Internal Server Error processing project");
-    }
-  }
+router.post("/:user/:project/process", (req, res, next) => {
+  // Get project and create a new process entry
+  Project.getOne(req.params.user, req.params.project)
+    .then(async (project) => {
+      try {
+        const prev_results = await Result.getAll(
+          req.params.user,
+          req.params.project
+        );
+        for (let r of prev_results) {
+          await delete_image(
+            req.params.user,
+            req.params.project,
+            "out",
+            r.img_key
+          );
+          await Result.delete(r.user_id, r.project_id, r.img_id);
+        }
+      } catch (_) {
+        res.status(400).jsonp("Error deleting previous results");
+        return;
+      }
+
+      if (project.tools.length == 0) {
+        res.status(400).jsonp("No tools selected");
+        return;
+      }
+
+      const adv_tools = advanced_tool_num(project);
+      axios
+        .get(users_ms + `${req.params.user}/process/${adv_tools}`, {
+          httpsAgent: httpsAgent,
+        })
+        .then(async (resp) => {
+          const can_process = resp.data;
+
+          if (!can_process) {
+            res.status(404).jsonp("No more daily_operations available");
+            return;
+          }
+
+          const source_path = `/../images/users/${req.params.user}/projects/${req.params.project}/src`;
+          const result_path = `/../images/users/${req.params.user}/projects/${req.params.project}/out`;
+
+          if (fs.existsSync(path.join(__dirname, source_path)))
+            fs.rmSync(path.join(__dirname, source_path), {
+              recursive: true,
+              force: true,
+            });
+
+          fs.mkdirSync(path.join(__dirname, source_path), { recursive: true });
+
+          if (fs.existsSync(path.join(__dirname, result_path)))
+            fs.rmSync(path.join(__dirname, result_path), {
+              recursive: true,
+              force: true,
+            });
+
+          fs.mkdirSync(path.join(__dirname, result_path), { recursive: true });
+
+          let error = false;
+
+          for (let img of project.imgs) {
+            let url = "";
+            try {
+              const resp = await get_image_docker(
+                req.params.user,
+                req.params.project,
+                "src",
+                img.og_img_key
+              );
+              url = resp.data.url;
+
+              const img_resp = await axios.get(url, { responseType: "stream" });
+
+              const writer = fs.createWriteStream(img.og_uri);
+
+              // Use a Promise to handle the stream completion
+              await new Promise((resolve, reject) => {
+                writer.on("finish", resolve);
+                writer.on("error", reject);
+                img_resp.data.pipe(writer); // Pipe AFTER setting up the event handlers
+              });
+            } catch (_) {
+              res.status(400).jsonp("Error acquiring source images");
+              return;
+            }
+
+            const msg_id = `request-${uuidv4()}`;
+            const timestamp = new Date().toISOString();
+
+            const og_img_uri = img.og_uri;
+            const new_img_uri = img.new_uri;
+            const tool = project.tools.filter((t) => t.position === 0)[0];
+
+            const tool_name = tool.procedure;
+            const params = tool.params;
+
+            const process = {
+              user_id: req.params.user,
+              project_id: req.params.project,
+              img_id: img._id,
+              msg_id: msg_id,
+              cur_pos: 0,
+              og_img_uri: og_img_uri,
+              new_img_uri: new_img_uri,
+            };
+
+            // Making sure database entry is created before sending message to avoid conflicts
+            await Process.create(process)
+              .then((_) => {
+                send_msg_tool(
+                  msg_id,
+                  timestamp,
+                  og_img_uri,
+                  new_img_uri,
+                  tool_name,
+                  params
+                );
+              })
+              .catch((_) => (error = true));
+          }
+
+          if (error)
+            res
+              .status(603)
+              .jsonp(
+                `There were some erros creating all process requests. Some results can be invalid.`
+              );
+          else res.sendStatus(201);
+        })
+        .catch((_) => res.status(400).jsonp(`Error checking if can process`));
+    })
+    .catch((_) => res.status(501).jsonp(`Error acquiring user's project`));
 });
 
 // Update a specific project
@@ -934,112 +1048,48 @@ router.delete("/:user/:project/tool/:tool", (req, res, next) => {
     .catch((_) => res.status(501).jsonp(`Error acquiring user's project`));
 });
 
+// Cancel ongoing project processing
+router.post("/:user/:project/cancel", (req, res, next) => {
+  // Get all processes for this project
+  Process.getProject(req.params.user, req.params.project)
+    .then(async (processes) => {
+      try {
+        // Collect all message IDs for purging
+        const msg_ids = processes.map(p => p.msg_id);
+        
+        // Delete all processes related to this project
+        for (let process of processes) {
+          await Process.delete(
+            req.params.user,
+            req.params.project,
+            process._id
+          );
+        }
+        
+        // Clean up temporary directories
+        const source_path = `/../images/users/${req.params.user}/projects/${req.params.project}/src`;
+        const result_path = `/../images/users/${req.params.user}/projects/${req.params.project}/out`;
 
-// Função auxiliar para iniciar o processamento (Extraída para reutilização no T-06)
-async function trigger_processing(user_id, project_id) {
-  const project = await Project.getOne(user_id, project_id);
-  
-  // 1. Limpar resultados anteriores
-  try {
-    const prev_results = await Result.getAll(user_id, project_id);
-    for (let r of prev_results) {
-      await delete_image(user_id, project_id, "out", r.img_key);
-      await Result.delete(r.user_id, r.project_id, r.img_id);
-    }
-  } catch (err) {
-    console.error("Warning: Failed to clear previous results", err);
-    // Não rebentamos aqui, tentamos continuar
-  }
-
-  if (project.tools.length == 0) {
-    throw { status: 400, msg: "No tools selected" };
-  }
-
-  // 2. Verificar Quotas (User MS)
-  const adv_tools = advanced_tool_num(project);
-  try {
-    const resp = await axios.get(users_ms + `${user_id}/process/${adv_tools}`, {
-      httpsAgent: httpsAgent,
-    });
-    if (!resp.data) {
-      throw { status: 404, msg: "No more daily_operations available" };
-    }
-  } catch (err) {
-    if (err.status) throw err; // Se já for o nosso erro
-    throw { status: 400, msg: "Error checking quotas" };
-  }
-
-  // 3. Preparar Sistema de Ficheiros
-  const source_path = `/../images/users/${user_id}/projects/${project_id}/src`;
-  const result_path = `/../images/users/${user_id}/projects/${project_id}/out`;
-
-  // Nota: Não apagamos o SRC, porque ele é necessário para o re-processamento!
-  // Apenas garantimos que existe.
-  if (!fs.existsSync(path.join(__dirname, source_path))) {
-     fs.mkdirSync(path.join(__dirname, source_path), { recursive: true });
-  }
-
-  // Limpar diretoria de output para novos resultados
-  if (fs.existsSync(path.join(__dirname, result_path))) {
-    fs.rmSync(path.join(__dirname, result_path), { recursive: true, force: true });
-  }
-  fs.mkdirSync(path.join(__dirname, result_path), { recursive: true });
-
-  let error = false;
-
-  // 4. Disparar Processamento para cada Imagem
-  for (let img of project.imgs) {
-    try {
-      // Garantir que a imagem de origem está no disco (Download do MinIO se necessário)
-      // Esta verificação é crucial se o contentor tiver reiniciado
-      if (!fs.existsSync(img.og_uri)) {
-          const resp = await get_image_docker(user_id, project_id, "src", img.og_img_key);
-          const url = resp.data.url;
-          const img_resp = await axios.get(url, { responseType: "stream" });
-          const writer = fs.createWriteStream(img.og_uri);
-          await new Promise((resolve, reject) => {
-            writer.on("finish", resolve);
-            writer.on("error", reject);
-            img_resp.data.pipe(writer);
+        if (fs.existsSync(path.join(__dirname, source_path))) {
+          fs.rmSync(path.join(__dirname, source_path), {
+            recursive: true,
+            force: true,
           });
+        }
+
+        if (fs.existsSync(path.join(__dirname, result_path))) {
+          fs.rmSync(path.join(__dirname, result_path), {
+            recursive: true,
+            force: true,
+          });
+        }
+
+        res.sendStatus(204);
+      } catch (error) {
+        res.status(500).jsonp("Error canceling processing");
       }
-
-      const msg_id = `request-${uuidv4()}`;
-      const timestamp = new Date().toISOString();
-
-      const og_img_uri = img.og_uri;
-      const new_img_uri = img.new_uri; // O output da ferramenta 1 vai para aqui
-      const tool = project.tools.filter((t) => t.position === 0)[0];
-
-      const process_entry = {
-        user_id: user_id,
-        project_id: project_id,
-        img_id: img._id,
-        msg_id: msg_id,
-        cur_pos: 0,
-        og_img_uri: og_img_uri,
-        new_img_uri: new_img_uri,
-      };
-
-      await Process.create(process_entry);
-      
-      send_msg_tool(
-        msg_id,
-        timestamp,
-        og_img_uri,
-        new_img_uri,
-        tool.procedure,
-        tool.params
-      );
-
-    } catch (err) {
-      console.error("Error launching process for image:", img._id, err);
-      error = true;
-    }
-  }
-
-  if (error) throw { status: 603, msg: "Errors creating process requests" };
-  return;
-}
+    })
+    .catch((_) => res.status(501).jsonp(`Error acquiring user's processes`));
+});
 
 module.exports = { router, process_msg };

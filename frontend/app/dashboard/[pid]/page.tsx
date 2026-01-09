@@ -33,6 +33,7 @@ import { ModeToggle } from "@/components/project-page/mode-toggle";
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useGetSharedProject } from "@/lib/queries/share";
+import { api } from "@/lib/axios";
 
 
 export default function Project({
@@ -75,6 +76,7 @@ export default function Project({
   const [processingProgress, setProcessingProgress] = useState<number>(0);
   const [processingSteps, setProcessingSteps] = useState<number>(1);
   const [waitingForPreview, setWaitingForPreview] = useState<string>("");
+  const [cancelRequested, setCancelRequested] = useState<boolean>(false);
 
   const totalProcessingSteps =
     (project.data?.tools.length ?? 0) * (project.data?.imgs.length ?? 0);
@@ -96,6 +98,10 @@ export default function Project({
 
   useEffect(() => {
     function onProcessUpdate() {
+      if (cancelRequested) {
+        return;
+      }
+
       setProcessingSteps((prev) => prev + 1);
 
       const progress = Math.min(
@@ -111,6 +117,7 @@ export default function Project({
             if (!isMobile) sidebar.setOpen(true);
             setProcessingProgress(0);
             setProcessingSteps(1);
+            setCancelRequested(false);
             router.push("?mode=results&view=grid");
           });
         }, 2000);
@@ -119,9 +126,9 @@ export default function Project({
 
     let active = true;
 
-    if (active && socket.data) {
+    if (active && socket.data && !cancelRequested) {
       socket.data.on("process-update", () => {
-        if (active) onProcessUpdate();
+        if (active && !cancelRequested) onProcessUpdate();
       });
     }
 
@@ -141,6 +148,7 @@ export default function Project({
     sidebar,
     isMobile,
     projectResults,
+    cancelRequested,
   ]);
 
   if (project.isError)
@@ -296,6 +304,34 @@ export default function Project({
               <LoaderCircle className="size-[1em] animate-spin" />
             </div>
             <Progress value={processingProgress} className="w-96" />
+            <Button 
+              variant="destructive" 
+              onClick={async () => {
+                setCancelRequested(true);
+                try {
+                  await api.post(
+                    `/projects/${session.user._id}/${pid}/cancel`,
+                    {},
+                    {
+                      headers: {
+                        Authorization: `Bearer ${session.token}`,
+                      },
+                    }
+                  );
+                } catch (error) {
+                  toast({
+                    title: "Error canceling processing",
+                    description: "Failed to cancel the processing. Please try again.",
+                    variant: "destructive",
+                  });
+                }
+                setProcessing(false);
+                setProcessingProgress(0);
+                setProcessingSteps(1);
+              }}
+            >
+              Cancel
+            </Button>
           </Card>
         </div>
       </Transition>

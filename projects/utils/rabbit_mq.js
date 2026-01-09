@@ -57,4 +57,10 @@ function read_rabbit_msg(queue, callback) {
     });
 }
 
-module.exports = { send_rabbit_msg, read_rabbit_msg };
+function purge_queue_for_msg_ids(msg_ids, callback) {
+    // This function would need to connect to RabbitMQ and purge messages with specific IDs
+    // For now, we'll rely on the database cleanup which prevents reprocessing
+    callback();
+}
+
+module.exports = { send_rabbit_msg, read_rabbit_msg, purge_queue_for_msg_ids };

@@ -94,4 +94,11 @@ function read_msg(callback){
     read_rabbit_msg(queues['project'], callback);
 }
 
-module.exports = { send_msg_tool, send_msg_client, send_msg_client_error, send_msg_client_preview, send_msg_client_preview_error, read_msg };
+function purge_msg_for_project(msg_ids, callback) {
+    const { send_rabbit_msg: _, read_rabbit_msg: __, purge_queue } = require('./rabbit_mq');
+    // This would need to be implemented in rabbit_mq.js
+    // For now, we rely on the database cleanup via Process.delete()
+    callback();
+}
+
+module.exports = { send_msg_tool, send_msg_client, send_msg_client_error, send_msg_client_preview, send_msg_client_preview_error, read_msg, purge_msg_for_project };
