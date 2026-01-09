@@ -84,7 +84,7 @@ function process_msg() {
       const user_msg_id = `update-client-process-${uuidv4()}`;
 
       // 1. Obter dados iniciais
-      const process = await Process.getOne(msg_id);
+      const process = await Process.getOneMsg(msg_id);
       if (!process) return; // Proteção contra mensagens órfãs
 
       // NOTA: Se já tiveres implementado o cancelamento (T-01), a verificação entra AQUI.
@@ -1050,14 +1050,11 @@ router.delete("/:user/:project/tool/:tool", (req, res, next) => {
 
 // Cancel ongoing project processing
 router.post("/:user/:project/cancel", (req, res, next) => {
-  // Get all processes for this project
+  // 1. Buscar todos os processos ativos deste projeto
   Process.getProject(req.params.user, req.params.project)
     .then(async (processes) => {
       try {
-        // Collect all message IDs for purging
-        const msg_ids = processes.map(p => p.msg_id);
-        
-        // Delete all processes related to this project
+        // 2. Apagar registos da BD (Isto é o "Kill Switch" lógico)
         for (let process of processes) {
           await Process.delete(
             req.params.user,
@@ -1066,26 +1063,25 @@ router.post("/:user/:project/cancel", (req, res, next) => {
           );
         }
         
-        // Clean up temporary directories
-        const source_path = `/../images/users/${req.params.user}/projects/${req.params.project}/src`;
-        const result_path = `/../images/users/${req.params.user}/projects/${req.params.project}/out`;
+        // 3. Limpeza de ficheiros temporários
+        const source_path = path.join(__dirname, `/../images/users/${req.params.user}/projects/${req.params.project}/src`);
+        const result_path = path.join(__dirname, `/../images/users/${req.params.user}/projects/${req.params.project}/out`);
+        const tmp_path = path.join(__dirname, `/../images/users/${req.params.user}/projects/${req.params.project}/tmp`);
 
-        if (fs.existsSync(path.join(__dirname, source_path))) {
-          fs.rmSync(path.join(__dirname, source_path), {
-            recursive: true,
-            force: true,
-          });
-        }
+        // Função auxiliar para apagar pasta se existir
+        const safeDelete = (p) => {
+            if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+        };
+        
+        // Nota: Não apagamos o 'src' original se for a fonte do projeto, 
+        // mas aqui parece ser a pasta de trabalho temporária.
+        safeDelete(result_path);
+        safeDelete(tmp_path);
 
-        if (fs.existsSync(path.join(__dirname, result_path))) {
-          fs.rmSync(path.join(__dirname, result_path), {
-            recursive: true,
-            force: true,
-          });
-        }
-
-        res.sendStatus(204);
+        console.log(`[CANCEL] Projeto ${req.params.project} cancelado.`);
+        res.sendStatus(204); 
       } catch (error) {
+        console.error("Erro ao cancelar:", error);
         res.status(500).jsonp("Error canceling processing");
       }
     })

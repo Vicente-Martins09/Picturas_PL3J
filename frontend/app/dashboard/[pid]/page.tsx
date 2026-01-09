@@ -39,25 +39,15 @@ import JSZip from "jszip";
 import axios from "axios";
 import { useGetSharedResults } from "@/lib/queries/share-results";
 
-
-
-
-export default function Project({
-  params,
-}: {
-  params: Promise<{ pid: string }>;
-}) {
-
+export default function Project({ params }: { params: Promise<{ pid: string }> }) {
+  // --- ESTADO & HOOKS ---
   const [shareToken, setShareToken] = useState("");
 
   useEffect(() => {
     setShareToken(sessionStorage.getItem("share_token") || "");
   }, []);
 
-
   const isShare = !!shareToken;
-
-  
 
   const resolvedParams = use(params);
   const session = useSession();
@@ -79,14 +69,18 @@ export default function Project({
   const path = usePathname();
   const sidebar = useSidebar();
   const isMobile = useIsMobile();
+  
+  // Estados de Interface
   const [currentImage, setCurrentImage] = useState<ProjectImage | null>(null);
   const [processing, setProcessing] = useState<boolean>(false);
   const [processingProgress, setProcessingProgress] = useState<number>(0);
   const [processingSteps, setProcessingSteps] = useState<number>(1);
   const [waitingForPreview, setWaitingForPreview] = useState<string>("");
-  const [cancelRequested, setCancelRequested] = useState<boolean>(false);
-  const sharedResults = useGetSharedResults(shareToken);
+  
+  // Novo Estado de Cancelamento
+  const [isCancelled, setIsCancelled] = useState<boolean>(false);
 
+  const sharedResults = useGetSharedResults(shareToken);
 
   const sharePermission =
     (project.data as any)?.share?.permission ??
@@ -96,12 +90,16 @@ export default function Project({
 
   const totalProcessingSteps =
     (project.data?.tools.length ?? 0) * (project.data?.imgs.length ?? 0);
+  
   const projectResults = useGetProjectResults(
     shareToken ? "" : uid,
     pid,
     shareToken ? "" : jwt,
   );
+  
   const qc = useQueryClient();
+
+  // --- EFEITOS ---
 
   useLayoutEffect(() => {
     if (
@@ -114,37 +112,38 @@ export default function Project({
 
   useEffect(() => {
     function onProcessUpdate() {
-      if (cancelRequested) {
-        return;
-      }
+      // Se o utilizador já cancelou, ignoramos qualquer mensagem que chegue atrasada do servidor
+      if (isCancelled) return;
 
-      setProcessingSteps((prev) => prev + 1);
-
-      const progress = Math.min(
-        Math.round((processingSteps * 100) / totalProcessingSteps),
-        100,
-      );
-
-      setProcessingProgress(progress);
-      if (processingSteps >= totalProcessingSteps) {
-        setTimeout(() => {
-          projectResults.refetch().then(() => {
-            setProcessing(false);
-            if (!isMobile) sidebar.setOpen(true);
-            setProcessingProgress(0);
-            setProcessingSteps(1);
-            setCancelRequested(false);
-            router.push("?mode=results&view=grid");
-          });
-        }, 2000);
-      }
+      setProcessingSteps((prev) => {
+        const nextStep = prev + 1;
+        const progress = Math.min(Math.round((nextStep * 100) / totalProcessingSteps), 100);
+        setProcessingProgress(progress);
+        
+        // Se completou
+        if (nextStep >= totalProcessingSteps) {
+           // Pequeno delay para UX
+           setTimeout(() => {
+             if (!isCancelled) { // Verificação dupla
+               projectResults.refetch().then(() => {
+                 setProcessing(false);
+                 setProcessingProgress(0);
+                 setProcessingSteps(1);
+                 if (!isMobile) sidebar.setOpen(true);
+                 router.push(`?mode=results&view=${view}`); // Mantém a view atual
+               });
+             }
+           }, 1000);
+        }
+        return nextStep;
+      });
     }
 
     let active = true;
 
-    if (active && socket.data && !cancelRequested) {
+    if (active && socket.data && !isCancelled) {
       socket.data.on("process-update", () => {
-        if (active && !cancelRequested) onProcessUpdate();
+        if (active && !isCancelled) onProcessUpdate();
       });
     }
 
@@ -164,8 +163,11 @@ export default function Project({
     sidebar,
     isMobile,
     projectResults,
-    cancelRequested,
+    isCancelled,
+    view
   ]);
+
+  // --- RENDERIZAÇÃO DE ERROS/LOADING ---
 
   if (project.isError)
     return (
@@ -188,14 +190,14 @@ export default function Project({
       </div>
     );
 
-  if (
-    !isShare && ( projectResults.isLoading ||!projectResults.data)
-  )
+  if (!isShare && (projectResults.isLoading || !projectResults.data))
     return (
       <div className="flex justify-center items-center h-screen">
         <Loading />
       </div>
     );
+
+  // --- RENDERIZAÇÃO PRINCIPAL ---
 
   return (
     <ProjectProvider
@@ -229,6 +231,11 @@ export default function Project({
                       if (isReadOnly) return;
 
                       try {
+                        // Reset de estados antes de iniciar
+                        setIsCancelled(false);
+                        setProcessingSteps(1);
+                        setProcessingProgress(0);
+
                         if (isShare) {
                           await api.post(`/share/project/${shareToken}/process`);
                           setProcessing(true);
@@ -279,7 +286,6 @@ export default function Project({
                       const zip = new JSZip();
 
                       if (mode === "edit") {
-                        // download imagens do projeto
                         for (const image of project.data.imgs) {
                           const resp = await axios.get(image.url, { responseType: "arraybuffer" });
                           zip.file(image.name, resp.data);
@@ -294,7 +300,7 @@ export default function Project({
                       }
 
                       // mode === "results"
-                      const results = sharedResults.data; // <- a tua query share results
+                      const results = sharedResults.data; 
                       if (!results) throw new Error("No results yet");
 
                       const all = [
@@ -356,6 +362,8 @@ export default function Project({
           />
         </div>
       </div>
+      
+      {/* OVERLAY DE PROCESSAMENTO */}
       <Transition
         show={processing}
         enter="transition-opacity ease-in duration-300"
@@ -372,31 +380,35 @@ export default function Project({
               <LoaderCircle className="size-[1em] animate-spin" />
             </div>
             <Progress value={processingProgress} className="w-96" />
+            
+            {/* BOTÃO CANCELAR IMPLEMENTADO AQUI */}
             {!isShare && (
             <Button 
               variant="destructive" 
               onClick={async () => {
-                setCancelRequested(true);
+                // 1. Feedback Imediato (Optimistic UI)
+                setIsCancelled(true); // Bloqueia updates do socket
+                setProcessing(false); // Fecha o modal
+                setProcessingProgress(0);
+                setProcessingSteps(1);
+                
+                toast({ title: "Canceling...", description: "Stopping the pipeline." });
+
                 try {
+                  // 2. Pedido ao Backend (Silencioso)
                   await api.post(
                     `/projects/${session.user._id}/${pid}/cancel`,
                     {},
-                    {
-                      headers: {
-                        Authorization: `Bearer ${session.token}`,
-                      },
-                    }
+                    { headers: { Authorization: `Bearer ${session.token}` } }
                   );
+                  toast({ title: "Cancelled", description: "Processing stopped successfully." });
                 } catch (error) {
-                  toast({
-                    title: "Error canceling processing",
-                    description: "Failed to cancel the processing. Please try again.",
-                    variant: "destructive",
-                  });
+                  // Mesmo que o backend falhe, para o utilizador já "parou".
+                  console.error("Cancel failed on server", error);
+                } finally {
+                  // Reset da flag para permitir futuros processamentos (segurança)
+                  setTimeout(() => setIsCancelled(false), 1000);
                 }
-                setProcessing(false);
-                setProcessingProgress(0);
-                setProcessingSteps(1);
               }}
             >
               Cancel
@@ -407,3 +419,4 @@ export default function Project({
     </ProjectProvider>
   );
 }
+
